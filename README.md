@@ -42,6 +42,14 @@
 - Train/Val/Test = 70/15/15 (stratified) → 3,537 / 758 / 759장
 - 입력 크기: 128×128×3
 
+<img src="results/01_class_distribution.png" width="420"/>
+
+클래스별 데이터 수를 보면 일반쓰레기(274장)가 종이(1,994장)의 약 1/7 수준으로, 처음부터 클래스 불균형을 염두에 두고 접근해야 하는 데이터셋이었습니다.
+
+<img src="results/02_sample_images.png" width="420"/>
+
+실제 샘플 이미지입니다. 클래스별로 촬영 각도·배경·조명이 제각각이라 단순한 색상/질감만으로 구분하기 어려운 경우도 섞여 있습니다.
+
 ## CNN 구조
 
 Keras와 PyTorch 모두 **동일한 구조**로 구현했습니다 (파라미터 수 3,305,285개로 동일 확인).
@@ -75,6 +83,14 @@ Dense(5) → Softmax
 
 4차 단계는 원래 두 문제(클래스 불균형·프레임워크 일관성)와는 별개로, 3차 구현 과정에서 PyTorch 학습이 유독 느리다는 점을 추가로 발견해 해결한 것입니다. 원인은 `torchvision.transforms`가 CPU에서 샘플 단위로 증강을 수행해 GPU 연산 중간에 병목이 생기는 것으로 추정했고, 이를 배치 전체를 GPU 위에서 한 번에 변형하는 방식으로 바꿔 개선했습니다.
 
+<img src="results/03_keras_learning_curves.png" width="420"/> <img src="results/05_pytorch_learning_curves.png" width="420"/>
+
+Keras(왼쪽)와 PyTorch(오른쪽) 학습 곡선입니다. 두 프레임워크 모두 Early Stopping이 걸리기 전까지 검증 정확도가 꾸준히 상승하는 패턴을 보였습니다.
+
+<img src="results/06_accuracy_comparison.png" width="420"/> <img src="results/07_loss_comparison.png" width="420"/>
+
+같은 축에 겹쳐 그려보면, 3차(가중치 완화) 적용 이후 두 프레임워크의 검증 정확도·손실 곡선이 비슷한 궤적으로 수렴하는 것을 확인할 수 있습니다.
+
 ## 최종 결과
 
 | 지표 | Keras | PyTorch |
@@ -84,18 +100,30 @@ Dense(5) → Softmax
 | 이미지당 추론 시간 | 1~2ms 수준 | 1~2ms 수준 |
 | 학습 시간(4차 적용 후) | — | 45~75초 (seed별 변동) |
 
+<img src="results/09_overall_comparison_table.png" width="420"/> <img src="results/10_overall_comparison_chart.png" width="420"/>
+
 - 정확도·파라미터 수는 구현 방식이 달라도 비슷하게 나왔습니다.
 - 추론 속도는 두 구현 모두 단일 이미지 기준 빠른 편이었습니다.
 - 다중 시드(42, 7, 123) 검증 결과, PyTorch 쪽이 Keras보다 시드 간 정확도 변동(표준편차 약 3.56%p vs 0.56%p)이 다소 더 크게 나타났습니다 — 다만 시드 3개로 내린 결론이라 추가 검증이 필요합니다.
 - 추론 속도 차이의 원인은 단정하기 어렵지만, Keras `predict()`의 `tf.function` 재추적 오버헤드(TensorFlow 공식 이슈 트래커에 보고된 사례)와 PyTorch의 `eval()`/`no_grad()` 구조 차이 등이 영향을 줬을 가능성이 있다고 판단했습니다.
 
-결과 이미지는 [`results/`](./results) 폴더에 있습니다 (학습 곡선, Confusion Matrix, 클래스별 Precision/Recall/F1, 오분류 샘플 등).
+<img src="results/04_keras_confusion_matrix.png" width="330"/> <img src="results/08_pytorch_confusion_matrix.png" width="330"/>
+
+Confusion Matrix도 Keras(왼쪽)·PyTorch(오른쪽)가 비슷한 오분류 패턴을 보이는데, 두 경우 모두 종이·유리 등 다수 클래스보다 일반쓰레기 클래스에서 오분류가 두드러집니다.
+
+<img src="results/11_per_class_metrics_table.png" width="420"/> <img src="results/12_per_class_metrics_chart.png" width="420"/>
+
+클래스별 Precision/Recall/F1을 보면 일반쓰레기 클래스의 Recall이 다른 클래스보다 낮게 나타나, 전체 Accuracy만으로는 가려지는 약점이 있다는 걸 확인할 수 있습니다.
 
 ## 오류 분석
 
 | 문제 | 원인 추정 | 관찰 | 개선 방법(검토) |
 |---|---|---|---|
-| 일반쓰레기 등 소수 클래스의 Recall이 상대적으로 낮음 | 학습 데이터 수 부족(274장, 최대 클래스의 약 1/7) | 혼돈 행렬에서 일반쓰레기가 종이로 오분류되는 비중이 높음 (`results/13_misclassified_sample.png` 참고) | Class Weight 추가 조정, Data Augmentation 강화, Transfer Learning, 추가 데이터 확보 |
+| 일반쓰레기 등 소수 클래스의 Recall이 상대적으로 낮음 | 학습 데이터 수 부족(274장, 최대 클래스의 약 1/7) | 혼돈 행렬에서 일반쓰레기가 종이로 오분류되는 비중이 높음 | Class Weight 추가 조정, Data Augmentation 강화, Transfer Learning, 추가 데이터 확보 |
+
+<img src="results/13_misclassified_sample.png" width="420"/>
+
+실제 일반쓰레기 이미지가 종이로 오분류된 사례입니다. 형태나 색상이 종이류와 비슷해 보이는 경우 혼동이 발생하는 것으로 관찰됩니다.
 
 ## 기술 스택
 
